@@ -2,7 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 
@@ -26,42 +26,59 @@ const users = [
   { id: 2, email: 'sales@twilio.com', password: bcrypt.hashSync('sales123', 10), name: 'Sales Rep', role: 'user' }
 ];
 
+// Column headers for Excel
+const HEADERS = [
+  'id', 'customer_name', 'account_sid', 'sales_rep', 'ae_name',
+  'tier_profile', 'current_spend', 'projected_spend',
+  'messaging_volume', 'voice_minutes', 'email_volume',
+  'cost_savings', 'efficiency_gains', 'revenue_increase',
+  'total_value', 'roi', 'payback_months',
+  'notes', 'created_at', 'updated_at', 'created_by'
+];
+
 // ============= EXCEL HELPERS =============
-function initExcel() {
+async function initExcel() {
   if (!fs.existsSync(DATA_FILE)) {
-    const wb = XLSX.utils.book_new();
-    const headers = [
-      'id', 'customer_name', 'account_sid', 'sales_rep', 'ae_name',
-      'tier_profile', 'current_spend', 'projected_spend',
-      'messaging_volume', 'voice_minutes', 'email_volume',
-      'cost_savings', 'efficiency_gains', 'revenue_increase',
-      'total_value', 'roi', 'payback_months',
-      'notes', 'created_at', 'updated_at', 'created_by'
-    ];
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-    XLSX.utils.book_append_sheet(wb, ws, 'Calculations');
-    XLSX.writeFile(wb, DATA_FILE);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Calculations');
+    worksheet.columns = HEADERS.map(h => ({ header: h, key: h, width: 15 }));
+    await workbook.xlsx.writeFile(DATA_FILE);
   }
 }
 
-function readExcel() {
-  initExcel();
-  const wb = XLSX.readFile(DATA_FILE);
-  const ws = wb.Sheets['Calculations'];
-  const data = XLSX.utils.sheet_to_json(ws);
+async function readExcel() {
+  await initExcel();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(DATA_FILE);
+  const worksheet = workbook.getWorksheet('Calculations');
+
+  const data = [];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber === 1) return; // Skip header row
+    const rowData = {};
+    row.eachCell((cell, colNumber) => {
+      rowData[HEADERS[colNumber - 1]] = cell.value;
+    });
+    if (rowData.id) data.push(rowData);
+  });
+
   return data;
 }
 
-function writeExcel(data) {
-  initExcel();
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.json_to_sheet(data);
-  XLSX.utils.book_append_sheet(wb, ws, 'Calculations');
-  XLSX.writeFile(wb, DATA_FILE);
+async function writeExcel(data) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet('Calculations');
+  worksheet.columns = HEADERS.map(h => ({ header: h, key: h, width: 15 }));
+
+  data.forEach(row => {
+    worksheet.addRow(row);
+  });
+
+  await workbook.xlsx.writeFile(DATA_FILE);
 }
 
-function getNextId() {
-  const data = readExcel();
+async function getNextId() {
+  const data = await readExcel();
   if (data.length === 0) return 1;
   return Math.max(...data.map(d => d.id || 0)) + 1;
 }
@@ -105,19 +122,20 @@ app.post('/api/auth/login', (req, res) => {
 });
 
 // ============= CALCULATIONS ROUTES =============
-app.get('/api/calculations', authMiddleware, (req, res) => {
+app.get('/api/calculations', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
     res.json(data);
   } catch (err) {
+    console.error('Error fetching:', err);
     res.status(500).json({ error: 'Failed to fetch calculations' });
   }
 });
 
-app.get('/api/calculations/search', authMiddleware, (req, res) => {
+app.get('/api/calculations/search', authMiddleware, async (req, res) => {
   try {
     const { query } = req.query;
-    const data = readExcel();
+    const data = await readExcel();
 
     if (!query) {
       return res.json(data);
@@ -125,10 +143,10 @@ app.get('/api/calculations/search', authMiddleware, (req, res) => {
 
     const lowerQuery = query.toLowerCase();
     const filtered = data.filter(row =>
-      (row.customer_name && row.customer_name.toLowerCase().includes(lowerQuery)) ||
-      (row.account_sid && row.account_sid.toLowerCase().includes(lowerQuery)) ||
-      (row.sales_rep && row.sales_rep.toLowerCase().includes(lowerQuery)) ||
-      (row.ae_name && row.ae_name.toLowerCase().includes(lowerQuery))
+      (row.customer_name && String(row.customer_name).toLowerCase().includes(lowerQuery)) ||
+      (row.account_sid && String(row.account_sid).toLowerCase().includes(lowerQuery)) ||
+      (row.sales_rep && String(row.sales_rep).toLowerCase().includes(lowerQuery)) ||
+      (row.ae_name && String(row.ae_name).toLowerCase().includes(lowerQuery))
     );
 
     res.json(filtered);
@@ -137,9 +155,9 @@ app.get('/api/calculations/search', authMiddleware, (req, res) => {
   }
 });
 
-app.get('/api/calculations/:id', authMiddleware, (req, res) => {
+app.get('/api/calculations/:id', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
     const calc = data.find(d => d.id === parseInt(req.params.id));
 
     if (!calc) {
@@ -152,11 +170,11 @@ app.get('/api/calculations/:id', authMiddleware, (req, res) => {
   }
 });
 
-app.post('/api/calculations', authMiddleware, (req, res) => {
+app.post('/api/calculations', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
     const newCalc = {
-      id: getNextId(),
+      id: await getNextId(),
       ...req.body,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -164,7 +182,7 @@ app.post('/api/calculations', authMiddleware, (req, res) => {
     };
 
     data.push(newCalc);
-    writeExcel(data);
+    await writeExcel(data);
 
     res.json(newCalc);
   } catch (err) {
@@ -173,9 +191,9 @@ app.post('/api/calculations', authMiddleware, (req, res) => {
   }
 });
 
-app.put('/api/calculations/:id', authMiddleware, (req, res) => {
+app.put('/api/calculations/:id', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
     const index = data.findIndex(d => d.id === parseInt(req.params.id));
 
     if (index === -1) {
@@ -189,23 +207,23 @@ app.put('/api/calculations/:id', authMiddleware, (req, res) => {
       updated_at: new Date().toISOString()
     };
 
-    writeExcel(data);
+    await writeExcel(data);
     res.json(data[index]);
   } catch (err) {
     res.status(500).json({ error: 'Failed to update calculation' });
   }
 });
 
-app.delete('/api/calculations/:id', authMiddleware, (req, res) => {
+app.delete('/api/calculations/:id', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
     const filtered = data.filter(d => d.id !== parseInt(req.params.id));
 
     if (filtered.length === data.length) {
       return res.status(404).json({ error: 'Not found' });
     }
 
-    writeExcel(filtered);
+    await writeExcel(filtered);
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete calculation' });
@@ -213,9 +231,9 @@ app.delete('/api/calculations/:id', authMiddleware, (req, res) => {
 });
 
 // ============= ANALYTICS ROUTES =============
-app.get('/api/analytics/dashboard', authMiddleware, (req, res) => {
+app.get('/api/analytics/dashboard', authMiddleware, async (req, res) => {
   try {
-    const data = readExcel();
+    const data = await readExcel();
 
     // Overview stats
     const overview = {
@@ -288,11 +306,9 @@ app.get('/api/analytics/dashboard', authMiddleware, (req, res) => {
   }
 });
 
-app.get('/api/analytics/export', authMiddleware, (req, res) => {
+app.get('/api/analytics/export', authMiddleware, async (req, res) => {
   try {
-    if (!fs.existsSync(DATA_FILE)) {
-      initExcel();
-    }
+    await initExcel();
     res.download(DATA_FILE, `sierra_roi_export_${new Date().toISOString().split('T')[0]}.xlsx`);
   } catch (err) {
     res.status(500).json({ error: 'Failed to export data' });
@@ -300,11 +316,12 @@ app.get('/api/analytics/export', authMiddleware, (req, res) => {
 });
 
 // ============= START SERVER =============
-initExcel();
-app.listen(PORT, () => {
-  console.log(`\n🚀 Sierra ROI API Server running on http://localhost:${PORT}`);
-  console.log(`\n📊 Data stored in: ${DATA_FILE}`);
-  console.log(`\n🔑 Default users:`);
-  console.log(`   Admin: admin@twilio.com / admin123`);
-  console.log(`   Sales: sales@twilio.com / sales123\n`);
+initExcel().then(() => {
+  app.listen(PORT, () => {
+    console.log(`\n  Sierra ROI API Server running on http://localhost:${PORT}`);
+    console.log(`\n  Data stored in: ${DATA_FILE}`);
+    console.log(`\n  Default users:`);
+    console.log(`   Admin: admin@twilio.com / admin123`);
+    console.log(`   Sales: sales@twilio.com / sales123\n`);
+  });
 });
