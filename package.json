@@ -1,0 +1,12 @@
+{
+  "name": "sierra-roi-calculator",
+  "version": "1.0.0",
+  "description": "Sierra ROI Calculator - Full Stack Application",
+  "scripts": {
+    "install:all": "cd server && npm install && cd ../client && npm install",
+    "start:server": "cd server && npm start",
+    "start:client": "cd client && npm start",
+    "start": "npm run start:server & npm run start:client",
+    "dev": "npm run start"
+  }
+}
