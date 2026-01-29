@@ -1,1009 +1,1055 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import * as XLSX from 'xlsx';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
-
-// ============= AUTH SERVICE =============
-const AuthService = {
-  login: async (email, password) => {
-    const response = await fetch(`${API_URL}/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    if (!response.ok) throw new Error('Login failed');
-    const data = await response.json();
-    localStorage.setItem('token', data.token);
-    localStorage.setItem('user', JSON.stringify(data.user));
-    return data;
-  },
-
-  logout: () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  },
-
-  getCurrentUser: () => {
-    const user = localStorage.getItem('user');
-    return user ? JSON.parse(user) : null;
-  },
-
-  getToken: () => localStorage.getItem('token'),
-
-  isAuthenticated: () => !!localStorage.getItem('token')
-};
-
-// ============= API SERVICE =============
-const ApiService = {
-  headers: () => ({
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${AuthService.getToken()}`
-  }),
-
-  getCalculations: async () => {
-    const response = await fetch(`${API_URL}/calculations`, {
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  },
-
-  searchCalculations: async (query) => {
-    const response = await fetch(`${API_URL}/calculations/search?query=${encodeURIComponent(query)}`, {
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to search');
-    return response.json();
-  },
-
-  getCalculation: async (id) => {
-    const response = await fetch(`${API_URL}/calculations/${id}`, {
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to fetch');
-    return response.json();
-  },
-
-  saveCalculation: async (calculation) => {
-    const response = await fetch(`${API_URL}/calculations`, {
-      method: 'POST',
-      headers: ApiService.headers(),
-      body: JSON.stringify(calculation)
-    });
-    if (!response.ok) throw new Error('Failed to save');
-    return response.json();
-  },
-
-  updateCalculation: async (id, calculation) => {
-    const response = await fetch(`${API_URL}/calculations/${id}`, {
-      method: 'PUT',
-      headers: ApiService.headers(),
-      body: JSON.stringify(calculation)
-    });
-    if (!response.ok) throw new Error('Failed to update');
-    return response.json();
-  },
-
-  deleteCalculation: async (id) => {
-    const response = await fetch(`${API_URL}/calculations/${id}`, {
-      method: 'DELETE',
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to delete');
-    return response.json();
-  },
-
-  getAnalytics: async () => {
-    const response = await fetch(`${API_URL}/analytics/dashboard`, {
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to fetch analytics');
-    return response.json();
-  },
-
-  exportData: async () => {
-    const response = await fetch(`${API_URL}/analytics/export`, {
-      headers: ApiService.headers()
-    });
-    if (!response.ok) throw new Error('Failed to export');
-    return response.blob();
-  }
-};
-
-// ============= LOGIN COMPONENT =============
-function LoginPage({ onLogin }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      await AuthService.login(email, password);
-      onLogin();
-    } catch (err) {
-      setError('Invalid email or password');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 flex items-center justify-center p-4">
-      <div className="bg-white rounded-lg shadow-2xl p-8 w-full max-w-md">
-        <h1 className="text-3xl font-bold text-slate-900 mb-2">Sierra ROI Calculator</h1>
-        <p className="text-slate-600 mb-6">Sign in to access your account</p>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit}>
-          <div className="mb-4">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              placeholder="your.email@twilio.com"
-              required
-            />
-          </div>
-
-          <div className="mb-6">
-            <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              placeholder="********"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition-all disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
-
-        <div className="mt-6 pt-6 border-t border-slate-200">
-          <p className="text-sm text-slate-600">
-            Default admin: <span className="font-semibold">admin@twilio.com</span> / admin123
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============= CUSTOMER LIST COMPONENT =============
-function CustomerList({ onSelect, onNew }) {
-  const [customers, setCustomers] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    loadCustomers();
-  }, []);
-
-  const loadCustomers = async () => {
-    try {
-      const data = await ApiService.getCalculations();
-      setCustomers(data);
-    } catch (err) {
-      console.error('Error loading customers:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSearch = async (query) => {
-    setSearchQuery(query);
-    if (!query.trim()) {
-      loadCustomers();
-      return;
-    }
-
-    try {
-      const data = await ApiService.searchCalculations(query);
-      setCustomers(data);
-    } catch (err) {
-      console.error('Error searching:', err);
-    }
-  };
-
-  const handleDelete = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this calculation?')) return;
-
-    try {
-      await ApiService.deleteCalculation(id);
-      loadCustomers();
-    } catch (err) {
-      alert('Error deleting calculation');
-    }
-  };
-
-  const formatCurrency = (num) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0
-    }).format(num || 0);
-  };
-
-  if (loading) {
-    return <div className="text-center py-8">Loading...</div>;
-  }
-
-  return (
-    <div>
-      <div className="flex gap-4 mb-6">
-        <input
-          type="text"
-          value={searchQuery}
-          onChange={(e) => handleSearch(e.target.value)}
-          placeholder="Search by customer name, Account SID, or sales rep..."
-          className="flex-1 px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-        />
-        <button
-          onClick={onNew}
-          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-semibold"
-        >
-          + New Calculation
-        </button>
-      </div>
-
-      {customers.length === 0 ? (
-        <div className="text-center py-12 bg-slate-50 rounded-lg">
-          <p className="text-slate-600">No calculations found</p>
-          <button
-            onClick={onNew}
-            className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold"
-          >
-            Create Your First Calculation
-          </button>
-        </div>
-      ) : (
-        <div className="grid gap-4">
-          {customers.map((customer) => (
-            <div
-              key={customer.id}
-              className="bg-white rounded-lg shadow p-6 hover:shadow-lg transition-shadow border border-slate-200"
-            >
-              <div className="flex justify-between items-start">
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold text-slate-900">{customer.customer_name}</h3>
-                  <p className="text-sm text-slate-600 mt-1">
-                    Account SID: {customer.account_sid} | Sales Rep: {customer.sales_rep || 'N/A'}
-                    {customer.ae_name && ` | AE: ${customer.ae_name}`}
-                  </p>
-                  <div className="mt-3 flex gap-4">
-                    <span className="text-sm">
-                      <span className="text-slate-600">Value:</span>{' '}
-                      <span className="font-semibold text-green-600">{formatCurrency(customer.total_value)}</span>
-                    </span>
-                    <span className="text-sm">
-                      <span className="text-slate-600">ROI:</span>{' '}
-                      <span className="font-semibold text-blue-600">{(customer.roi || 0).toFixed(0)}%</span>
-                    </span>
-                    <span className="text-sm">
-                      <span className="text-slate-600">Tier:</span>{' '}
-                      <span className="font-semibold">{customer.tier_profile || 'N/A'}</span>
-                    </span>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => onSelect(customer.id)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-                  >
-                    View/Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(customer.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-semibold"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============= CALCULATOR WITH DB COMPONENT =============
-function CalculatorWithDB({ customerId, onBack }) {
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState(null);
-
-  const [formData, setFormData] = useState({
-    customer_name: '',
-    account_sid: '',
-    sales_rep: '',
-    ae_name: '',
-    tier_profile: 'Growth',
-    current_spend: '',
-    projected_spend: '',
-    messaging_volume: '',
-    voice_minutes: '',
-    email_volume: '',
-    cost_savings: '',
-    efficiency_gains: '',
-    revenue_increase: '',
-    notes: ''
+export default function SierraROICalculator() {
+  const [customerInfo, setCustomerInfo] = useState({
+    customerName: '',
+    accountSID: '',
+    salesRep: '',
+    date: new Date().toISOString().split('T')[0]
   });
 
-  const [results, setResults] = useState(null);
+  const [currentState, setCurrentState] = useState({
+    monthlyContacts: 10000,
+    currentContainment: 40,
+    humanAgents: 50,
+    costPerAgent: 4000,
+    avgHandleTime: 15,
+    // Channel-specific spend
+    voiceSpend: 30000,
+    smsSpend: 15000,
+    whatsappSpend: 3000,
+    emailSpend: 2000,
+    // Business metrics
+    churnRate: 5,
+    currentCAC: 500,
+    customerBase: 100000
+  });
 
-  useEffect(() => {
-    if (customerId) {
-      loadCalculation();
-    }
-  }, [customerId]);
+  const [sierraAssumptions, setSierra] = useState({
+    aiContainment: 70,
+    handleTimeReduction: 50,
+    crossChannelPull: 25,
+    churnImprovement: 1,
+    cacImprovement: 20
+  });
 
-  const loadCalculation = async () => {
-    setLoading(true);
-    try {
-      const data = await ApiService.getCalculation(customerId);
-      setFormData({
-        customer_name: data.customer_name || '',
-        account_sid: data.account_sid || '',
-        sales_rep: data.sales_rep || '',
-        ae_name: data.ae_name || '',
-        tier_profile: data.tier_profile || 'Growth',
-        current_spend: data.current_spend || '',
-        projected_spend: data.projected_spend || '',
-        messaging_volume: data.messaging_volume || '',
-        voice_minutes: data.voice_minutes || '',
-        email_volume: data.email_volume || '',
-        cost_savings: data.cost_savings || '',
-        efficiency_gains: data.efficiency_gains || '',
-        revenue_increase: data.revenue_increase || '',
-        notes: data.notes || ''
-      });
-      if (data.total_value) {
-        setResults({
-          total_value: data.total_value,
-          roi: data.roi,
-          payback_months: data.payback_months
-        });
-      }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to load calculation' });
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Sierra Usage Inputs - Actual usage numbers
+  const [sierraUsage, setSierraUsage] = useState({
+    uniqueContactsPerMonth: 50000,
+    conversationsPerContact: 2,
+    avgParticipantsPerConversation: 1.3,
+    knowledgeDocsSizeMB: 100,
+    numberOfLanguageOperators: 5,
+    avgConversationChars: 5000,
+    recallToCreationRatio: 3
+  });
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
+  const [savedCalculations, setSavedCalculations] = useState([]);
+  const [showTooltip, setShowTooltip] = useState(null);
 
+  // Tooltip Component
+  const Tooltip = ({ text, children }) => (
+    <div className="relative inline-block group">
+      {children}
+      <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-slate-800 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none w-64 z-50">
+        {text}
+        <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-800"></div>
+      </div>
+    </div>
+  );
+
+  // Calculate ROI metrics with detailed formulas
   const calculateROI = () => {
-    const currentSpend = parseFloat(formData.current_spend) || 0;
-    const projectedSpend = parseFloat(formData.projected_spend) || 0;
-    const costSavings = parseFloat(formData.cost_savings) || 0;
-    const efficiencyGains = parseFloat(formData.efficiency_gains) || 0;
-    const revenueIncrease = parseFloat(formData.revenue_increase) || 0;
+    const {
+      monthlyContacts,
+      currentContainment,
+      humanAgents,
+      costPerAgent,
+      avgHandleTime,
+      voiceSpend,
+      smsSpend,
+      whatsappSpend,
+      emailSpend,
+      churnRate,
+      currentCAC,
+      customerBase
+    } = currentState;
 
-    // Total value = cost savings + efficiency gains + revenue increase
-    const totalValue = costSavings + efficiencyGains + revenueIncrease;
+    const {
+      aiContainment,
+      handleTimeReduction,
+      crossChannelPull,
+      churnImprovement,
+      cacImprovement
+    } = sierraAssumptions;
 
-    // Implementation cost estimate based on tier
-    const tierCosts = {
-      'Starter': 10000,
-      'Growth': 25000,
-      'Enterprise': 50000,
-      'Strategic': 100000
-    };
-    const implementationCost = tierCosts[formData.tier_profile] || 25000;
+    const {
+      uniqueContactsPerMonth,
+      conversationsPerContact,
+      avgParticipantsPerConversation,
+      knowledgeDocsSizeMB,
+      numberOfLanguageOperators,
+      avgConversationChars,
+      recallToCreationRatio
+    } = sierraUsage;
 
-    // ROI = (Total Value - Implementation Cost) / Implementation Cost * 100
-    const roi = implementationCost > 0
-      ? ((totalValue - implementationCost) / implementationCost) * 100
-      : 0;
+    const totalTwilioSpend = voiceSpend + smsSpend + whatsappSpend + emailSpend;
 
-    // Payback period in months
-    const monthlyValue = totalValue / 12;
-    const paybackMonths = monthlyValue > 0
-      ? implementationCost / monthlyValue
-      : 0;
+    // VALUE CALCULATIONS WITH FORMULAS
 
-    const calculatedResults = {
-      total_value: totalValue,
-      roi: Math.round(roi),
-      payback_months: Math.round(paybackMonths * 10) / 10
-    };
+    // A. Agent Cost Reduction
+    // Formula: (Current human contacts - Future human contacts) × Cost per contact × 12 months
+    const currentHumanContacts = monthlyContacts * (1 - currentContainment / 100);
+    const futureHumanContacts = monthlyContacts * (1 - aiContainment / 100);
+    const contactsShiftedToAI = currentHumanContacts - futureHumanContacts;
+    const costPerContact = (humanAgents * costPerAgent) / currentHumanContacts;
+    const agentCostReduction = contactsShiftedToAI * costPerContact * 12;
 
-    setResults(calculatedResults);
-    return calculatedResults;
-  };
+    // B. Handle Time Efficiency
+    // Formula: Remaining human contacts × Time saved per contact × Cost per minute × 12 months
+    const avgCostPerMinute = (humanAgents * costPerAgent) / (currentHumanContacts * avgHandleTime);
+    const timeSavingsPerContact = avgHandleTime * (handleTimeReduction / 100);
+    const handleTimeEfficiency = futureHumanContacts * timeSavingsPerContact * avgCostPerMinute * 12;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+    // C. Churn Reduction Value
+    // Formula: Churn improvement % × Customer base × Current CAC
+    // (Lower churn = fewer customers to replace = CAC savings)
+    const churnReduction = (churnImprovement / 100) * customerBase * currentCAC;
 
-    if (!formData.customer_name || !formData.account_sid) {
-      setMessage({ type: 'error', text: 'Customer name and Account SID are required' });
-      return;
-    }
+    // D. CAC Reduction Value
+    // Formula: New customers per year × CAC improvement % × Current CAC
+    // Assume customer growth rate = 10% annually
+    const newCustomersPerYear = customerBase * 0.10;
+    const cacReduction = newCustomersPerYear * (cacImprovement / 100) * currentCAC;
 
-    setSaving(true);
-    setMessage(null);
+    // E. Build Cost Avoidance (first year conservative)
+    const buildCostAvoidance = 0;
 
-    try {
-      const calculatedResults = calculateROI();
+    const totalValue = agentCostReduction + handleTimeEfficiency + churnReduction + cacReduction + buildCostAvoidance;
 
-      const dataToSave = {
-        ...formData,
-        current_spend: parseFloat(formData.current_spend) || 0,
-        projected_spend: parseFloat(formData.projected_spend) || 0,
-        messaging_volume: parseFloat(formData.messaging_volume) || 0,
-        voice_minutes: parseFloat(formData.voice_minutes) || 0,
-        email_volume: parseFloat(formData.email_volume) || 0,
-        cost_savings: parseFloat(formData.cost_savings) || 0,
-        efficiency_gains: parseFloat(formData.efficiency_gains) || 0,
-        revenue_increase: parseFloat(formData.revenue_increase) || 0,
-        total_value: calculatedResults.total_value,
-        roi: calculatedResults.roi,
-        payback_months: calculatedResults.payback_months
-      };
+    // COST CALCULATIONS WITH ACTUAL USAGE
 
-      if (customerId) {
-        await ApiService.updateCalculation(customerId, dataToSave);
-        setMessage({ type: 'success', text: 'Calculation updated successfully!' });
-      } else {
-        await ApiService.saveCalculation(dataToSave);
-        setMessage({ type: 'success', text: 'Calculation saved successfully!' });
+    // Sierra Product Costs based on usage inputs
+    const totalConversations = uniqueContactsPerMonth * conversationsPerContact;
+
+    // Memory Creation: Total conversations × Avg chars per conversation / 1000 × $0.01
+    const memoryCreation = (totalConversations * avgConversationChars / 1000) * 0.01;
+
+    // Memory Recall: Total conversations × Recall ratio × Avg chars / 1000 × $0.007
+    const memoryRecall = (totalConversations * recallToCreationRatio * avgConversationChars / 1000) * 0.007;
+
+    // Profiles: Unique contacts × $0.01
+    const profiles = uniqueContactsPerMonth * 0.01;
+
+    // CINTEL: Total conversations × Avg chars × Number of operators / 1000 × $0.005
+    const cintel = (totalConversations * avgConversationChars * numberOfLanguageOperators / 1000) * 0.005;
+
+    // Maestro: Total conversations × Avg participants × $0.01
+    const maestro = (totalConversations * avgParticipantsPerConversation) * 0.01;
+
+    // Knowledge: MB stored × $2.50
+    const knowledge = knowledgeDocsSizeMB * 2.50;
+
+    const sierraMonthly = memoryCreation + memoryRecall + profiles + cintel + maestro + knowledge;
+    const sierraAnnual = sierraMonthly * 12;
+
+    // Channel Spend Change
+    // Formula: (Cross-channel pull % × Total spend) - (Voice reduction from efficiency)
+    const channelIncrease = totalTwilioSpend * (crossChannelPull / 100);
+    const voiceReduction = voiceSpend * (handleTimeReduction / 100) * 0.5; // 50% of handle time reduction translates to voice spend reduction
+    const netChannelChange = (channelIncrease - voiceReduction) * 12;
+
+    const totalSpend = sierraAnnual + netChannelChange;
+
+    // ROI Metrics
+    const netValue = totalValue - totalSpend;
+    const roi = totalSpend > 0 ? ((totalValue - totalSpend) / totalSpend) * 100 : 0;
+    const paybackMonths = totalSpend > 0 ? totalSpend / (totalValue / 12) : 0;
+    const captureRate = totalValue > 0 ? (totalSpend / totalValue) * 100 : 0;
+
+    return {
+      value: {
+        agentCostReduction,
+        handleTimeEfficiency,
+        churnReduction,
+        cacReduction,
+        buildCostAvoidance,
+        total: totalValue
+      },
+      spend: {
+        sierraMonthly,
+        sierraAnnual,
+        netChannelChange,
+        total: totalSpend
+      },
+      metrics: {
+        netValue,
+        roi,
+        paybackMonths,
+        captureRate
+      },
+      breakdown: {
+        memoryCreation: memoryCreation * 12,
+        memoryRecall: memoryRecall * 12,
+        profiles: profiles * 12,
+        cintel: cintel * 12,
+        maestro: maestro * 12,
+        knowledge: knowledge * 12,
+        channelIncrease: channelIncrease * 12,
+        voiceReduction: voiceReduction * 12
+      },
+      formulas: {
+        agentCostReductionFormula: `(${currentHumanContacts.toFixed(0)} current human - ${futureHumanContacts.toFixed(0)} future human) × $${costPerContact.toFixed(2)}/contact × 12 months`,
+        handleTimeEfficiencyFormula: `${futureHumanContacts.toFixed(0)} contacts × ${timeSavingsPerContact.toFixed(1)} min saved × $${avgCostPerMinute.toFixed(2)}/min × 12`,
+        churnReductionFormula: `${churnImprovement}% improvement × ${customerBase.toLocaleString()} customers × $${currentCAC} CAC`,
+        cacReductionFormula: `${newCustomersPerYear.toFixed(0)} new customers × ${cacImprovement}% improvement × $${currentCAC} CAC`
       }
-    } catch (err) {
-      setMessage({ type: 'error', text: 'Failed to save calculation' });
-    } finally {
-      setSaving(false);
-    }
+    };
   };
+
+  const results = calculateROI();
 
   const formatCurrency = (num) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      minimumFractionDigits: 0
-    }).format(num || 0);
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(num);
   };
 
-  if (loading) {
-    return <div className="text-center py-8">Loading calculation...</div>;
-  }
+  const formatPercent = (num) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'percent',
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1
+    }).format(num / 100);
+  };
+
+  const getTierProfile = () => {
+    const { crossChannelPull, aiContainment } = sierraAssumptions;
+    if (crossChannelPull < 15 && aiContainment < 65) return 'Conservative (Voice-Heavy, Low Pull)';
+    if (crossChannelPull > 35 && aiContainment > 75) return 'Optimal (Messaging-Heavy, High Pull)';
+    return 'Balanced (Multi-Channel, Medium Pull)';
+  };
+
+  const saveCalculation = () => {
+    if (!customerInfo.customerName || !customerInfo.accountSID) {
+      alert('Please enter Customer Name and Account SID');
+      return;
+    }
+
+    const calculation = {
+      ...customerInfo,
+      ...currentState,
+      ...sierraAssumptions,
+      ...sierraUsage,
+      tierProfile: getTierProfile(),
+      // Value breakdown
+      agentCostReduction: results.value.agentCostReduction,
+      handleTimeEfficiency: results.value.handleTimeEfficiency,
+      churnReduction: results.value.churnReduction,
+      cacReduction: results.value.cacReduction,
+      totalValue: results.value.total,
+      // Spend breakdown
+      sierraAnnual: results.spend.sierraAnnual,
+      netChannelChange: results.spend.netChannelChange,
+      totalSpend: results.spend.total,
+      // Metrics
+      netValue: results.metrics.netValue,
+      roi: results.metrics.roi,
+      paybackMonths: results.metrics.paybackMonths,
+      captureRate: results.metrics.captureRate,
+      timestamp: new Date().toISOString()
+    };
+
+    setSavedCalculations([...savedCalculations, calculation]);
+    alert(`Calculation saved for ${customerInfo.customerName}`);
+  };
+
+  const exportToExcel = () => {
+    if (savedCalculations.length === 0) {
+      alert('No calculations to export. Save at least one calculation first.');
+      return;
+    }
+
+    const worksheet = XLSX.utils.json_to_sheet(savedCalculations.map(calc => ({
+      // Customer Info
+      'Date': calc.date,
+      'Customer Name': calc.customerName,
+      'Account SID': calc.accountSID,
+      'Sales Rep': calc.salesRep,
+      'Tier Profile': calc.tierProfile,
+
+      // Current State
+      'Monthly Contacts': calc.monthlyContacts,
+      'Current Containment %': calc.currentContainment,
+      'Human Agents': calc.humanAgents,
+      'Cost per Agent': calc.costPerAgent,
+      'Avg Handle Time (min)': calc.avgHandleTime,
+      'Voice Spend': calc.voiceSpend,
+      'SMS Spend': calc.smsSpend,
+      'WhatsApp Spend': calc.whatsappSpend,
+      'Email Spend': calc.emailSpend,
+      'Total Twilio Spend': calc.voiceSpend + calc.smsSpend + calc.whatsappSpend + calc.emailSpend,
+      'Churn Rate %': calc.churnRate,
+      'Current CAC': calc.currentCAC,
+      'Customer Base': calc.customerBase,
+
+      // Sierra Assumptions
+      'AI Containment %': calc.aiContainment,
+      'Handle Time Reduction %': calc.handleTimeReduction,
+      'Cross-Channel Pull %': calc.crossChannelPull,
+      'Churn Improvement %': calc.churnImprovement,
+      'CAC Improvement %': calc.cacImprovement,
+
+      // Sierra Usage
+      'Unique Contacts/Month': calc.uniqueContactsPerMonth,
+      'Conversations per Contact': calc.conversationsPerContact,
+      'Avg Participants/Conversation': calc.avgParticipantsPerConversation,
+      'Knowledge Docs Size (MB)': calc.knowledgeDocsSizeMB,
+      'Number of Language Operators': calc.numberOfLanguageOperators,
+      'Avg Conversation Chars': calc.avgConversationChars,
+      'Recall-to-Creation Ratio': calc.recallToCreationRatio,
+
+      // Results
+      'Total Value': calc.totalValue,
+      'Agent Cost Reduction': calc.agentCostReduction,
+      'Handle Time Efficiency': calc.handleTimeEfficiency,
+      'Churn Reduction Value': calc.churnReduction,
+      'CAC Reduction Value': calc.cacReduction,
+      'Total Spend': calc.totalSpend,
+      'Sierra Annual Cost': calc.sierraAnnual,
+      'Net Channel Change': calc.netChannelChange,
+      'Net Value': calc.netValue,
+      'ROI %': calc.roi,
+      'Payback Months': calc.paybackMonths,
+      'Capture Rate %': calc.captureRate
+    })));
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Sierra ROI Calculations');
+    XLSX.writeFile(workbook, `Sierra_ROI_Calculations_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
   return (
-    <div>
-      <button
-        onClick={onBack}
-        className="mb-6 text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-2"
-      >
-        ← Back to Customer List
-      </button>
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-lg shadow-2xl p-8 mb-8">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-4xl font-bold text-slate-900 mb-2">Sierra ROI Calculator</h1>
+              <p className="text-slate-600">Sales & Account Team Tool - Calculate Customer Value & Additional Spend</p>
+            </div>
+            <div className="text-right">
+              <button
+                onClick={exportToExcel}
+                className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold shadow-lg transition-all"
+              >
+                📊 Export to Excel ({savedCalculations.length})
+              </button>
+            </div>
+          </div>
 
-      <h2 className="text-2xl font-bold text-slate-900 mb-6">
-        {customerId ? 'Edit Calculation' : 'New ROI Calculation'}
-      </h2>
-
-      {message && (
-        <div className={`mb-6 px-4 py-3 rounded-lg ${
-          message.type === 'success'
-            ? 'bg-green-50 border border-green-200 text-green-700'
-            : 'bg-red-50 border border-red-200 text-red-700'
-        }`}>
-          {message.text}
-        </div>
-      )}
-
-      <form onSubmit={handleSubmit}>
-        {/* Customer Information */}
-        <div className="bg-slate-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Customer Information</h3>
-          <div className="grid grid-cols-2 gap-4">
+          {/* Customer Information */}
+          <div className="grid grid-cols-4 gap-4 mb-6 p-6 bg-blue-50 rounded-lg">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Customer Name *</label>
               <input
                 type="text"
-                name="customer_name"
-                value={formData.customer_name}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="Acme Corporation"
-                required
+                value={customerInfo.customerName}
+                onChange={(e) => setCustomerInfo({...customerInfo, customerName: e.target.value})}
+                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Enter customer name"
               />
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Account SID *</label>
               <input
                 type="text"
-                name="account_sid"
-                value={formData.account_sid}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="AC123456789"
-                required
+                value={customerInfo.accountSID}
+                onChange={(e) => setCustomerInfo({...customerInfo, accountSID: e.target.value})}
+                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="AC..."
               />
             </div>
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">Sales Rep</label>
               <input
                 type="text"
-                name="sales_rep"
-                value={formData.sales_rep}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="John Smith"
+                value={customerInfo.salesRep}
+                onChange={(e) => setCustomerInfo({...customerInfo, salesRep: e.target.value})}
+                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
+                placeholder="Your name"
               />
             </div>
             <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">AE Name</label>
+              <label className="block text-sm font-semibold text-slate-700 mb-2">Date</label>
               <input
-                type="text"
-                name="ae_name"
-                value={formData.ae_name}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="Jane Doe"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Tier Profile</label>
-              <select
-                name="tier_profile"
-                value={formData.tier_profile}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-              >
-                <option value="Starter">Starter</option>
-                <option value="Growth">Growth</option>
-                <option value="Enterprise">Enterprise</option>
-                <option value="Strategic">Strategic</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Current Usage */}
-        <div className="bg-slate-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Current Usage & Spend</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Current Annual Spend ($)</label>
-              <input
-                type="number"
-                name="current_spend"
-                value={formData.current_spend}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="100000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Projected Annual Spend ($)</label>
-              <input
-                type="number"
-                name="projected_spend"
-                value={formData.projected_spend}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="150000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Monthly Messaging Volume</label>
-              <input
-                type="number"
-                name="messaging_volume"
-                value={formData.messaging_volume}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="1000000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Monthly Voice Minutes</label>
-              <input
-                type="number"
-                name="voice_minutes"
-                value={formData.voice_minutes}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="50000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Monthly Email Volume</label>
-              <input
-                type="number"
-                name="email_volume"
-                value={formData.email_volume}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="500000"
-                min="0"
+                type="date"
+                value={customerInfo.date}
+                onChange={(e) => setCustomerInfo({...customerInfo, date: e.target.value})}
+                className="w-full px-4 py-2 border-2 border-blue-300 rounded-lg focus:border-blue-500 focus:outline-none"
               />
             </div>
           </div>
         </div>
 
-        {/* Value Drivers */}
-        <div className="bg-slate-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Annual Value Drivers ($)</h3>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Cost Savings</label>
-              <input
-                type="number"
-                name="cost_savings"
-                value={formData.cost_savings}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="50000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Efficiency Gains</label>
-              <input
-                type="number"
-                name="efficiency_gains"
-                value={formData.efficiency_gains}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="30000"
-                min="0"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Revenue Increase</label>
-              <input
-                type="number"
-                name="revenue_increase"
-                value={formData.revenue_increase}
-                onChange={handleChange}
-                className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-                placeholder="100000"
-                min="0"
-              />
-            </div>
-          </div>
-        </div>
+        <div className="grid grid-cols-2 gap-8">
+          {/* Left Column - Inputs */}
+          <div className="space-y-6">
+            {/* Current State */}
+            <div className="bg-white rounded-lg shadow-xl p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-slate-200 pb-3">
+                📊 Current State Metrics
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <Tooltip text="Total number of customer interactions per month across all channels (calls, messages, emails)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Monthly Contacts: {currentState.monthlyContacts.toLocaleString()} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1000"
+                    max="100000"
+                    step="1000"
+                    value={currentState.monthlyContacts}
+                    onChange={(e) => setCurrentState({...currentState, monthlyContacts: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
 
-        {/* Notes */}
-        <div className="bg-slate-50 rounded-lg p-6 mb-6">
-          <h3 className="text-lg font-bold text-slate-900 mb-4">Notes</h3>
-          <textarea
-            name="notes"
-            value={formData.notes}
-            onChange={handleChange}
-            className="w-full px-4 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:outline-none"
-            rows="3"
-            placeholder="Additional notes about this calculation..."
-          />
-        </div>
+                <div>
+                  <Tooltip text="Percentage of contacts currently resolved by automation/self-service without human agent involvement">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Current Containment Rate: {currentState.currentContainment}% ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="0"
+                    max="80"
+                    value={currentState.currentContainment}
+                    onChange={(e) => setCurrentState({...currentState, currentContainment: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
 
-        {/* Actions */}
-        <div className="flex gap-4">
-          <button
-            type="button"
-            onClick={calculateROI}
-            className="bg-slate-600 hover:bg-slate-700 text-white px-6 py-3 rounded-lg font-semibold"
-          >
-            Calculate ROI
-          </button>
-          <button
-            type="submit"
-            disabled={saving}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold disabled:opacity-50"
-          >
-            {saving ? 'Saving...' : (customerId ? 'Update Calculation' : 'Save Calculation')}
-          </button>
-        </div>
+                <div>
+                  <Tooltip text="Number of full-time human agents currently handling customer contacts">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Human Agents: {currentState.humanAgents} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="10"
+                    max="500"
+                    step="10"
+                    value={currentState.humanAgents}
+                    onChange={(e) => setCurrentState({...currentState, humanAgents: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
 
-        {/* Results */}
-        {results && (
-          <div className="mt-8 bg-gradient-to-br from-green-50 to-blue-50 rounded-lg p-6 border-2 border-green-200">
-            <h3 className="text-xl font-bold text-slate-900 mb-4">ROI Results</h3>
-            <div className="grid grid-cols-3 gap-6">
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-sm text-slate-600 mb-1">Total Annual Value</p>
-                <p className="text-3xl font-bold text-green-600">{formatCurrency(results.total_value)}</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-sm text-slate-600 mb-1">Return on Investment</p>
-                <p className="text-3xl font-bold text-blue-600">{results.roi}%</p>
-              </div>
-              <div className="bg-white rounded-lg p-4 shadow">
-                <p className="text-sm text-slate-600 mb-1">Payback Period</p>
-                <p className="text-3xl font-bold text-purple-600">{results.payback_months} months</p>
-              </div>
-            </div>
-          </div>
-        )}
-      </form>
-    </div>
-  );
-}
+                <div>
+                  <Tooltip text="Fully loaded cost per agent per month (salary + benefits + overhead + tools)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Cost per Agent/Month: {formatCurrency(currentState.costPerAgent)} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="2000"
+                    max="8000"
+                    step="500"
+                    value={currentState.costPerAgent}
+                    onChange={(e) => setCurrentState({...currentState, costPerAgent: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
 
-// ============= ADMIN DASHBOARD =============
-function AdminDashboard() {
-  const [analytics, setAnalytics] = useState(null);
-  const [loading, setLoading] = useState(true);
+                <div>
+                  <Tooltip text="Average time a human agent spends on each contact from start to resolution (in minutes)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Average Handle Time: {currentState.avgHandleTime} min ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="5"
+                    max="45"
+                    value={currentState.avgHandleTime}
+                    onChange={(e) => setCurrentState({...currentState, avgHandleTime: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
 
-  useEffect(() => {
-    loadAnalytics();
-  }, []);
+                {/* Channel Breakdown Section */}
+                <div className="mt-6 pt-6 border-t-2 border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">Monthly Twilio Spend by Channel</h3>
 
-  const loadAnalytics = async () => {
-    try {
-      const data = await ApiService.getAnalytics();
-      setAnalytics(data);
-    } catch (err) {
-      console.error('Error loading analytics:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+                  <div className="space-y-4">
+                    <div>
+                      <Tooltip text="Monthly spend on voice calls (inbound/outbound minutes + transcription)">
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">
+                          Voice Spend: {formatCurrency(currentState.voiceSpend)} ℹ️
+                        </label>
+                      </Tooltip>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100000"
+                        step="1000"
+                        value={currentState.voiceSpend}
+                        onChange={(e) => setCurrentState({...currentState, voiceSpend: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                    </div>
 
-  const handleExport = async () => {
-    try {
-      const blob = await ApiService.exportData();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sierra_export_${new Date().toISOString().split('T')[0]}.xlsx`;
-      a.click();
-    } catch (err) {
-      alert('Error exporting data');
-    }
-  };
+                    <div>
+                      <Tooltip text="Monthly spend on SMS messages (segments sent/received)">
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">
+                          SMS Spend: {formatCurrency(currentState.smsSpend)} ℹ️
+                        </label>
+                      </Tooltip>
+                      <input
+                        type="range"
+                        min="0"
+                        max="50000"
+                        step="1000"
+                        value={currentState.smsSpend}
+                        onChange={(e) => setCurrentState({...currentState, smsSpend: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                    </div>
 
-  const formatCurrency = (num) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 0
-    }).format(num || 0);
-  };
+                    <div>
+                      <Tooltip text="Monthly spend on WhatsApp messages (conversations + templates)">
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">
+                          WhatsApp Spend: {formatCurrency(currentState.whatsappSpend)} ℹ️
+                        </label>
+                      </Tooltip>
+                      <input
+                        type="range"
+                        min="0"
+                        max="20000"
+                        step="500"
+                        value={currentState.whatsappSpend}
+                        onChange={(e) => setCurrentState({...currentState, whatsappSpend: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                    </div>
 
-  if (loading) return <div className="text-center py-8">Loading analytics...</div>;
-  if (!analytics) return <div>Error loading analytics</div>;
+                    <div>
+                      <Tooltip text="Monthly spend on email (API calls + delivery)">
+                        <label className="block text-sm font-semibold text-slate-700 mb-2">
+                          Email Spend: {formatCurrency(currentState.emailSpend)} ℹ️
+                        </label>
+                      </Tooltip>
+                      <input
+                        type="range"
+                        min="0"
+                        max="10000"
+                        step="500"
+                        value={currentState.emailSpend}
+                        onChange={(e) => setCurrentState({...currentState, emailSpend: parseInt(e.target.value)})}
+                        className="w-full"
+                      />
+                    </div>
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold text-slate-900">Analytics Dashboard</h2>
-        <button
-          onClick={handleExport}
-          className="bg-green-600 hover:bg-green-700 text-white px-6 py-3 rounded-lg font-semibold"
-        >
-          Export All Data
-        </button>
-      </div>
-
-      {/* Overview Cards */}
-      <div className="grid grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <p className="text-sm text-slate-600 mb-2">Total Calculations</p>
-          <p className="text-3xl font-bold text-slate-900">{analytics.overview.total_calculations}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <p className="text-sm text-slate-600 mb-2">Total Customers</p>
-          <p className="text-3xl font-bold text-slate-900">{analytics.overview.total_customers}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <p className="text-sm text-slate-600 mb-2">Pipeline Value</p>
-          <p className="text-3xl font-bold text-green-600">{formatCurrency(analytics.overview.pipeline_value)}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <p className="text-sm text-slate-600 mb-2">Average ROI</p>
-          <p className="text-3xl font-bold text-blue-600">{(analytics.overview.avg_roi || 0).toFixed(0)}%</p>
-        </div>
-      </div>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-2 gap-6">
-        {/* By Tier */}
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <h3 className="text-xl font-bold text-slate-900 mb-4">Performance by Tier</h3>
-          <div className="space-y-3">
-            {analytics.byTier.length === 0 ? (
-              <p className="text-slate-500">No data yet</p>
-            ) : (
-              analytics.byTier.map((tier) => (
-                <div key={tier.tier_profile} className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                  <span className="font-semibold text-slate-700">{tier.tier_profile}</span>
-                  <div className="text-right">
-                    <p className="text-sm text-slate-600">{tier.count} customers</p>
-                    <p className="text-sm font-semibold text-green-600">{formatCurrency(tier.avg_value)} avg</p>
+                    <div className="flex justify-between items-center p-3 bg-slate-100 rounded-lg mt-2">
+                      <span className="font-bold text-slate-700">Total Twilio Spend:</span>
+                      <span className="text-lg font-bold text-slate-900">
+                        {formatCurrency(currentState.voiceSpend + currentState.smsSpend + currentState.whatsappSpend + currentState.emailSpend)}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
 
-        {/* Value Distribution */}
-        <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-          <h3 className="text-xl font-bold text-slate-900 mb-4">Value Distribution</h3>
-          <div className="space-y-3">
-            {analytics.valueDistribution.map((range) => (
-              <div key={range.value_range} className="flex justify-between items-center p-3 bg-slate-50 rounded">
-                <span className="font-semibold text-slate-700">{range.value_range}</span>
-                <span className="text-lg font-bold text-blue-600">{range.count}</span>
+                {/* Business Metrics */}
+                <div className="mt-6 pt-6 border-t-2 border-slate-200">
+                  <h3 className="text-lg font-bold text-slate-900 mb-4">Business Metrics</h3>
+
+                  <div>
+                    <Tooltip text="Percentage of customers who stop using your service annually">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">
+                        Customer Churn Rate: {currentState.churnRate}% ℹ️
+                      </label>
+                    </Tooltip>
+                    <input
+                      type="range"
+                      min="0"
+                      max="20"
+                      step="0.5"
+                      value={currentState.churnRate}
+                      onChange={(e) => setCurrentState({...currentState, churnRate: parseFloat(e.target.value)})}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <Tooltip text="Average cost to acquire a new customer (marketing + sales costs per customer)">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">
+                        Customer Acquisition Cost (CAC): {formatCurrency(currentState.currentCAC)} ℹ️
+                      </label>
+                    </Tooltip>
+                    <input
+                      type="range"
+                      min="100"
+                      max="2000"
+                      step="50"
+                      value={currentState.currentCAC}
+                      onChange={(e) => setCurrentState({...currentState, currentCAC: parseInt(e.target.value)})}
+                      className="w-full"
+                    />
+                  </div>
+
+                  <div className="mt-4">
+                    <Tooltip text="Total number of active customers in your customer base">
+                      <label className="block text-sm font-semibold text-slate-700 mb-2">
+                        Customer Base: {currentState.customerBase.toLocaleString()} ℹ️
+                      </label>
+                    </Tooltip>
+                    <input
+                      type="range"
+                      min="10000"
+                      max="500000"
+                      step="10000"
+                      value={currentState.customerBase}
+                      onChange={(e) => setCurrentState({...currentState, customerBase: parseInt(e.target.value)})}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
+            </div>
 
-      {/* Top AEs */}
-      <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-        <h3 className="text-xl font-bold text-slate-900 mb-4">Top Performing AEs</h3>
-        {analytics.byAE.length === 0 ? (
-          <p className="text-slate-500">No data yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="text-left p-3 font-semibold text-slate-700">AE Name</th>
-                  <th className="text-right p-3 font-semibold text-slate-700">Calculations</th>
-                  <th className="text-right p-3 font-semibold text-slate-700">Pipeline Value</th>
-                  <th className="text-right p-3 font-semibold text-slate-700">Avg ROI</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analytics.byAE.map((ae) => (
-                  <tr key={ae.ae_name} className="border-t border-slate-200">
-                    <td className="p-3 font-semibold text-slate-900">{ae.ae_name}</td>
-                    <td className="p-3 text-right">{ae.calculation_count}</td>
-                    <td className="p-3 text-right text-green-600 font-semibold">
-                      {formatCurrency(ae.total_pipeline_value)}
-                    </td>
-                    <td className="p-3 text-right text-blue-600 font-semibold">{(ae.avg_roi || 0).toFixed(0)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Recent Activity */}
-      <div className="bg-white rounded-lg shadow-lg p-6 border border-slate-200">
-        <h3 className="text-xl font-bold text-slate-900 mb-4">Recent Activity</h3>
-        {analytics.recentActivity.length === 0 ? (
-          <p className="text-slate-500">No activity yet</p>
-        ) : (
-          <div className="space-y-2">
-            {analytics.recentActivity.map((calc) => (
-              <div key={calc.id} className="flex justify-between items-center p-3 border-b border-slate-200">
+            {/* Sierra Assumptions */}
+            <div className="bg-white rounded-lg shadow-xl p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-red-200 pb-3">
+                🎯 Sierra-Enabled Assumptions
+              </h2>
+              <div className="space-y-4">
                 <div>
-                  <p className="font-semibold text-slate-900">{calc.customer_name}</p>
-                  <p className="text-sm text-slate-600">by {calc.ae_name || 'Unknown'}</p>
+                  <Tooltip text="Percentage of contacts that will be resolved by AI agents without human involvement after Sierra deployment">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      AI Containment Rate: {sierraAssumptions.aiContainment}% ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="50"
+                    max="85"
+                    value={sierraAssumptions.aiContainment}
+                    onChange={(e) => setSierra({...sierraAssumptions, aiContainment: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Typical range: 60-80%</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-green-600">{formatCurrency(calc.total_value)}</p>
-                  <p className="text-xs text-slate-500">{new Date(calc.created_at).toLocaleDateString()}</p>
+                <div>
+                  <Tooltip text="Percentage reduction in average handle time for remaining human-handled contacts due to AI assistance and better context">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Handle Time Reduction: {sierraAssumptions.handleTimeReduction}% ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="30"
+                    max="70"
+                    value={sierraAssumptions.handleTimeReduction}
+                    onChange={(e) => setSierra({...sierraAssumptions, handleTimeReduction: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Typical range: 40-60%</p>
+                </div>
+                <div>
+                  <Tooltip text="Percentage increase in total communication volume due to cross-channel engagement (SMS during voice calls, follow-up messages, etc.)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Cross-Channel Pull: {sierraAssumptions.crossChannelPull}% ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="5"
+                    max="40"
+                    value={sierraAssumptions.crossChannelPull}
+                    onChange={(e) => setSierra({...sierraAssumptions, crossChannelPull: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Year 1: 5-10%, Year 2: 20-30%, Year 3+: 30-40%</p>
+                </div>
+                <div>
+                  <Tooltip text="Percentage point reduction in customer churn rate due to improved service quality and faster resolutions">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Churn Improvement: {sierraAssumptions.churnImprovement}% points ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="0"
+                    max="3"
+                    step="0.5"
+                    value={sierraAssumptions.churnImprovement}
+                    onChange={(e) => setSierra({...sierraAssumptions, churnImprovement: parseFloat(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Conservative: 0-1%, Moderate: 1-2%, Aggressive: 2-3%</p>
+                </div>
+                <div>
+                  <Tooltip text="Percentage reduction in customer acquisition cost due to word-of-mouth from improved customer experience and reduced acquisition touch points">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      CAC Improvement: {sierraAssumptions.cacImprovement}% ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="0"
+                    max="40"
+                    step="5"
+                    value={sierraAssumptions.cacImprovement}
+                    onChange={(e) => setSierra({...sierraAssumptions, cacImprovement: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Conservative: 10-15%, Moderate: 15-25%, Aggressive: 25-40%</p>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
-// ============= MAIN APP =============
-export default function SierraROIApp() {
-  const [isAuthenticated, setIsAuthenticated] = useState(AuthService.isAuthenticated());
-  const [currentUser, setCurrentUser] = useState(AuthService.getCurrentUser());
-  const [currentView, setCurrentView] = useState('list'); // 'list', 'calculator', 'dashboard'
-  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-
-  const handleLogin = () => {
-    setIsAuthenticated(true);
-    setCurrentUser(AuthService.getCurrentUser());
-    setCurrentView('list');
-  };
-
-  const handleLogout = () => {
-    AuthService.logout();
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    setCurrentView('list');
-  };
-
-  if (!isAuthenticated) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
-  const isAdmin = currentUser?.role === 'admin';
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-900 to-slate-900 p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-lg shadow-2xl p-6 mb-8">
-          <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-3xl font-bold text-slate-900">Sierra ROI Calculator</h1>
-              <p className="text-slate-600">Welcome, {currentUser?.name}</p>
+              <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm font-semibold text-blue-900">
+                  Customer Tier Profile: <span className="text-blue-600">{getTierProfile()}</span>
+                </p>
+              </div>
             </div>
-            <div className="flex gap-4">
-              {isAdmin && (
-                <button
-                  onClick={() => setCurrentView('dashboard')}
-                  className={`px-6 py-2 rounded-lg font-semibold ${
-                    currentView === 'dashboard'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                  }`}
-                >
-                  Dashboard
-                </button>
-              )}
-              <button
-                onClick={() => { setCurrentView('list'); setSelectedCustomerId(null); }}
-                className={`px-6 py-2 rounded-lg font-semibold ${
-                  currentView === 'list'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                }`}
-              >
-                Customers
-              </button>
-              <button
-                onClick={handleLogout}
-                className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg font-semibold"
-              >
-                Logout
-              </button>
+
+            {/* Sierra Usage Inputs */}
+            <div className="bg-white rounded-lg shadow-xl p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-purple-200 pb-3">
+                📐 Sierra Usage Estimates
+              </h2>
+              <p className="text-sm text-slate-600 mb-4">
+                These numbers determine actual Sierra product costs. Work with customer to estimate realistic usage.
+              </p>
+              <div className="space-y-4">
+                <div>
+                  <Tooltip text="Number of unique customer profiles that will interact with Sierra each month (may be higher than monthly contacts if tracking repeat customers)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Unique Contacts/Month: {sierraUsage.uniqueContactsPerMonth.toLocaleString()} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="5000"
+                    max="200000"
+                    step="5000"
+                    value={sierraUsage.uniqueContactsPerMonth}
+                    onChange={(e) => setSierraUsage({...sierraUsage, uniqueContactsPerMonth: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Tooltip text="Average number of separate conversations each unique contact has per month (e.g., 2 = customer contacts twice per month)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Conversations per Contact: {sierraUsage.conversationsPerContact} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1"
+                    max="5"
+                    step="0.5"
+                    value={sierraUsage.conversationsPerContact}
+                    onChange={(e) => setSierraUsage({...sierraUsage, conversationsPerContact: parseFloat(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Tooltip text="Average number of participants in each conversation (1.0 = only customer, 1.3 = customer + occasionally another person, 2.0 = always customer + agent)">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Avg Participants/Conversation: {sierraUsage.avgParticipantsPerConversation} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1"
+                    max="3"
+                    step="0.1"
+                    value={sierraUsage.avgParticipantsPerConversation}
+                    onChange={(e) => setSierraUsage({...sierraUsage, avgParticipantsPerConversation: parseFloat(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Tooltip text="Total size of enterprise knowledge documents to be stored in Memora (PDFs, FAQs, policies, etc.) in megabytes">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Knowledge Docs Size: {sierraUsage.knowledgeDocsSizeMB} MB ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="50"
+                    value={sierraUsage.knowledgeDocsSizeMB}
+                    onChange={(e) => setSierraUsage({...sierraUsage, knowledgeDocsSizeMB: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Tooltip text="Number of CINTEL language operators customer will use (sentiment, escalation detection, compliance, etc.). Each operator processes conversations independently.">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Number of Language Operators: {sierraUsage.numberOfLanguageOperators} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1"
+                    max="15"
+                    value={sierraUsage.numberOfLanguageOperators}
+                    onChange={(e) => setSierraUsage({...sierraUsage, numberOfLanguageOperators: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">Common operators: sentiment, escalation, compliance, intent, PII detection</p>
+                </div>
+
+                <div>
+                  <Tooltip text="Average number of characters in each conversation (includes all turns). Short SMS: ~1000, Typical support: ~5000, Complex voice: ~10000">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Avg Conversation Characters: {sierraUsage.avgConversationChars.toLocaleString()} ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1000"
+                    max="15000"
+                    step="500"
+                    value={sierraUsage.avgConversationChars}
+                    onChange={(e) => setSierraUsage({...sierraUsage, avgConversationChars: parseInt(e.target.value)})}
+                    className="w-full"
+                  />
+                </div>
+
+                <div>
+                  <Tooltip text="Ratio of memory recalls to creations. Higher ratio = better margins. 3:1 means 3 recalls for every 1 memory created. Target: 3-5 for healthy margins.">
+                    <label className="block text-sm font-semibold text-slate-700 mb-2">
+                      Recall-to-Creation Ratio: {sierraUsage.recallToCreationRatio}:1 ℹ️
+                    </label>
+                  </Tooltip>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    step="0.5"
+                    value={sierraUsage.recallToCreationRatio}
+                    onChange={(e) => setSierraUsage({...sierraUsage, recallToCreationRatio: parseFloat(e.target.value)})}
+                    className="w-full"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    {sierraUsage.recallToCreationRatio < 3 ? '⚠️ Low ratio = margin risk' : '✅ Healthy margin ratio'}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Content */}
-        <div className="bg-white rounded-lg shadow-2xl p-8">
-          {currentView === 'dashboard' && isAdmin && <AdminDashboard />}
-          {currentView === 'list' && (
-            <CustomerList
-              onSelect={(id) => { setSelectedCustomerId(id); setCurrentView('calculator'); }}
-              onNew={() => { setSelectedCustomerId(null); setCurrentView('calculator'); }}
-            />
-          )}
-          {currentView === 'calculator' && (
-            <CalculatorWithDB
-              customerId={selectedCustomerId}
-              onBack={() => { setCurrentView('list'); setSelectedCustomerId(null); }}
-            />
-          )}
+          {/* Right Column - Results */}
+          <div className="space-y-6">
+            {/* ROI Summary */}
+            <div className="bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg shadow-2xl p-8 text-white">
+              <h2 className="text-3xl font-bold mb-6">💰 ROI Summary</h2>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm opacity-90 mb-1">Net Value</p>
+                  <p className="text-3xl font-bold">{formatCurrency(results.metrics.netValue)}</p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm opacity-90 mb-1">ROI</p>
+                  <p className="text-3xl font-bold">{results.metrics.roi.toFixed(0)}%</p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm opacity-90 mb-1">Payback Period</p>
+                  <p className="text-3xl font-bold">{results.metrics.paybackMonths.toFixed(1)} mo</p>
+                </div>
+                <div className="bg-white/10 backdrop-blur-sm rounded-lg p-4">
+                  <p className="text-sm opacity-90 mb-1">Sierra Capture Rate</p>
+                  <p className="text-3xl font-bold">{results.metrics.captureRate.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-white/10 backdrop-blur-sm rounded-lg">
+                <p className="text-sm mb-2">Industry benchmark for enabling tech: 10-30% of value</p>
+                <p className="text-lg font-semibold">
+                  Sierra's ask: {results.metrics.captureRate.toFixed(1)}% =
+                  {results.metrics.captureRate < 10 ? ' HIGHLY DEFENSIBLE ✅' : ' COMPETITIVE ⚠️'}
+                </p>
+              </div>
+            </div>
+
+            {/* Value Created */}
+            <div className="bg-white rounded-lg shadow-xl p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-green-200 pb-3">
+                📈 Annual Value Created
+              </h2>
+              <div className="space-y-3">
+                <div className="p-3 bg-green-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-slate-700">Agent Cost Reduction</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(results.value.agentCostReduction)}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Formula: {results.formulas.agentCostReductionFormula}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-green-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-slate-700">Handle Time Efficiency</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(results.value.handleTimeEfficiency)}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Formula: {results.formulas.handleTimeEfficiencyFormula}
+                  </p>
+                </div>
+
+                <div className="p-3 bg-green-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-slate-700">Churn Reduction Value</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(results.value.churnReduction)}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Formula: {results.formulas.churnReductionFormula}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Lower churn = fewer customers to replace = CAC savings
+                  </p>
+                </div>
+
+                <div className="p-3 bg-green-50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="font-semibold text-slate-700">CAC Reduction Value</span>
+                    <span className="text-lg font-bold text-green-600">{formatCurrency(results.value.cacReduction)}</span>
+                  </div>
+                  <p className="text-xs text-slate-600">
+                    Formula: {results.formulas.cacReductionFormula}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Better CX = word-of-mouth = lower acquisition costs
+                  </p>
+                </div>
+
+                <div className="flex justify-between items-center p-4 bg-green-600 text-white rounded-lg mt-4">
+                  <span className="text-lg font-bold">TOTAL VALUE</span>
+                  <span className="text-2xl font-bold">{formatCurrency(results.value.total)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Additional Spend */}
+            <div className="bg-white rounded-lg shadow-xl p-6">
+              <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-orange-200 pb-3">
+                💸 Additional Annual Spend
+              </h2>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
+                  <span className="font-semibold text-slate-700">Sierra Products</span>
+                  <span className="text-lg font-bold text-orange-600">{formatCurrency(results.spend.sierraAnnual)}</span>
+                </div>
+                <div className="flex justify-between items-center p-3 bg-orange-50 rounded-lg">
+                  <span className="font-semibold text-slate-700">Net Channel Change</span>
+                  <span className={`text-lg font-bold ${results.spend.netChannelChange > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                    {results.spend.netChannelChange > 0 ? '+' : ''}{formatCurrency(results.spend.netChannelChange)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center p-4 bg-orange-600 text-white rounded-lg mt-4">
+                  <span className="text-lg font-bold">TOTAL SPEND</span>
+                  <span className="text-2xl font-bold">{formatCurrency(results.spend.total)}</span>
+                </div>
+              </div>
+
+              <div className="mt-6 p-4 bg-slate-50 rounded-lg">
+                <p className="text-sm font-semibold text-slate-700 mb-3">Sierra Annual Breakdown by Product:</p>
+                <div className="space-y-2 text-sm">
+                  <Tooltip text={`Based on ${(sierraUsage.uniqueContactsPerMonth * sierraUsage.conversationsPerContact).toLocaleString()} total conversations × ${sierraUsage.avgConversationChars.toLocaleString()} avg chars / 1000 × $0.01`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">Memora - Memory Creation ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.memoryCreation)}</span>
+                    </div>
+                  </Tooltip>
+
+                  <Tooltip text={`Based on ${(sierraUsage.uniqueContactsPerMonth * sierraUsage.conversationsPerContact).toLocaleString()} conversations × ${sierraUsage.recallToCreationRatio} recall ratio × ${sierraUsage.avgConversationChars.toLocaleString()} chars / 1000 × $0.007`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">Memora - Memory Recall ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.memoryRecall)}</span>
+                    </div>
+                  </Tooltip>
+
+                  <Tooltip text={`Based on ${sierraUsage.uniqueContactsPerMonth.toLocaleString()} unique contacts × $0.01`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">Memora - Profiles ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.profiles)}</span>
+                    </div>
+                  </Tooltip>
+
+                  <Tooltip text={`Based on ${(sierraUsage.uniqueContactsPerMonth * sierraUsage.conversationsPerContact).toLocaleString()} conversations × ${sierraUsage.avgConversationChars.toLocaleString()} chars × ${sierraUsage.numberOfLanguageOperators} operators / 1000 × $0.005`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">CINTEL - Language Operators ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.cintel)}</span>
+                    </div>
+                  </Tooltip>
+
+                  <Tooltip text={`Based on ${(sierraUsage.uniqueContactsPerMonth * sierraUsage.conversationsPerContact).toLocaleString()} conversations × ${sierraUsage.avgParticipantsPerConversation} avg participants × $0.01`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">Maestro - Participants ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.maestro)}</span>
+                    </div>
+                  </Tooltip>
+
+                  <Tooltip text={`Based on ${sierraUsage.knowledgeDocsSizeMB} MB stored × $2.50/MB`}>
+                    <div className="flex justify-between hover:bg-slate-100 p-2 rounded">
+                      <span className="text-slate-600">Memora - Knowledge Docs ℹ️:</span>
+                      <span className="font-semibold">{formatCurrency(results.breakdown.knowledge)}</span>
+                    </div>
+                  </Tooltip>
+                </div>
+              </div>
+
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm font-semibold text-slate-700 mb-3">Channel Spend Impact:</p>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Cross-channel engagement increase:</span>
+                    <span className="font-semibold text-orange-600">+{formatCurrency(results.breakdown.channelIncrease)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600">Voice efficiency reduction:</span>
+                    <span className="font-semibold text-green-600">-{formatCurrency(results.breakdown.voiceReduction)}</span>
+                  </div>
+                  <div className="flex justify-between pt-2 border-t border-slate-300">
+                    <span className="font-semibold text-slate-700">Net Channel Impact:</span>
+                    <span className={`font-bold ${results.spend.netChannelChange > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                      {results.spend.netChannelChange > 0 ? '+' : ''}{formatCurrency(results.spend.netChannelChange)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Save Button */}
+            <button
+              onClick={saveCalculation}
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-lg font-bold text-lg shadow-lg transition-all transform hover:scale-105"
+            >
+              💾 Save Calculation for {customerInfo.customerName || 'Customer'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
