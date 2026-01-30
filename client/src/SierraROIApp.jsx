@@ -227,6 +227,43 @@ export default function SimplifiedSierraROICalculator() {
         channelIncrease: channelIncrease * 12,
         voiceReduction: voiceReduction * 12
       },
+      breakdownDetails: {
+        memoryCreation: {
+          meter: `${totalConversations.toLocaleString()} convos × ${avgConversationChars.toLocaleString()} chars`,
+          price: '$0.01 per 1K chars',
+          formula: `${totalConversations.toLocaleString()} × ${avgConversationChars.toLocaleString()} / 1,000 × $0.01 × 12`
+        },
+        memoryRecall: {
+          meter: `${totalConversations.toLocaleString()} convos × ${sierraUsage.recallsPerConversation} recalls × ${avgConversationChars.toLocaleString()} chars`,
+          price: '$0.007 per 1K chars',
+          formula: `${totalConversations.toLocaleString()} × ${sierraUsage.recallsPerConversation} × ${avgConversationChars.toLocaleString()} / 1,000 × $0.007 × 12`
+        },
+        profiles: {
+          meter: `${sierraUsage.uniqueContactsPerMonth.toLocaleString()} active profiles/mo`,
+          price: '$0.01 per profile',
+          formula: `${sierraUsage.uniqueContactsPerMonth.toLocaleString()} × $0.01 × 12`
+        },
+        cintel: {
+          meter: `${totalConversations.toLocaleString()} convos × ${avgConversationChars.toLocaleString()} chars × ${getOperatorCount()} operators`,
+          price: '$0.005 per 1K chars',
+          formula: `${totalConversations.toLocaleString()} × ${avgConversationChars.toLocaleString()} × ${getOperatorCount()} / 1,000 × $0.005 × 12`
+        },
+        maestro: {
+          meter: `${totalConversations.toLocaleString()} convos × ${sierraUsage.avgParticipantsPerConversation} participants`,
+          price: '$0.01 per participant',
+          formula: `${totalConversations.toLocaleString()} × ${sierraUsage.avgParticipantsPerConversation} × $0.01 × 12`
+        },
+        knowledge: {
+          meter: `${sierraUsage.knowledgeDocsSizeMB.toLocaleString()} MB stored`,
+          price: '$2.50 per MB',
+          formula: `${sierraUsage.knowledgeDocsSizeMB.toLocaleString()} × $2.50 × 12`
+        },
+        crmActivity: {
+          meter: `${sierraUsage.profilesWithCRMActivity.toLocaleString()} active profiles/mo`,
+          price: '$0.005 per profile',
+          formula: `${sierraUsage.profilesWithCRMActivity.toLocaleString()} × $0.005 × 12`
+        }
+      },
       calculations: {
         totalConversations,
         avgConversationChars,
@@ -412,7 +449,7 @@ export default function SimplifiedSierraROICalculator() {
             {/* Section 1: Channel Spend */}
             <div className="bg-white rounded-lg shadow-xl p-6">
               <h2 className="text-2xl font-bold text-slate-900 mb-6 border-b-2 border-slate-200 pb-3">
-                💰 Current Channel Spend
+                💰 Current Monthly Channel Spend
               </h2>
               <div className="space-y-4">
                 {[
@@ -460,9 +497,9 @@ export default function SimplifiedSierraROICalculator() {
               <h3 className="text-lg font-bold text-slate-700 mb-4">Cost Metrics</h3>
               <div className="space-y-4 mb-6">
                 {[
-                  { key: 'monthlyContacts', label: 'Monthly Contacts', min: 1000, max: 100000, step: 1000, tooltip: 'Total customer interactions per month' },
+                  { key: 'monthlyContacts', label: 'Monthly 2-way Conversation Contacts', min: 1000, max: 1000000, step: 1000, tooltip: 'Total 2-way conversation contacts per month' },
                   { key: 'containmentRate', label: 'Containment Rate (%)', min: 0, max: 80, step: 1, tooltip: 'Current % resolved without human agent' },
-                  { key: 'runningCostPerAIAgent', label: 'Running Cost per AI Agent/Month', min: 10, max: 500, step: 10, tooltip: 'Monthly cost to run each AI agent (compute, hosting, maintenance)' },
+                  { key: 'runningCostPerAIAgent', label: 'Running Cost for AI Agent(s)/Month', min: 10, max: 1000000, step: 10, tooltip: 'Monthly cost to run AI agent(s) (compute, hosting, maintenance)' },
                   { key: 'vendorCostPerHumanAgent', label: 'Vendor Cost per Human Agent/Month', min: 2000, max: 8000, step: 500, tooltip: 'Fully loaded monthly cost per human agent' },
                   { key: 'numberOfHumanAgents', label: 'Number of Human Agents', min: 10, max: 500, step: 10, tooltip: 'Current human agent count' },
                   { key: 'avgHandleTime', label: 'Avg Handle Time (min)', min: 5, max: 45, step: 1, tooltip: 'Average time per human contact' }
@@ -489,10 +526,10 @@ export default function SimplifiedSierraROICalculator() {
               <h3 className="text-lg font-bold text-slate-700 mb-4 pt-4 border-t-2 border-slate-200">Revenue Metrics</h3>
               <div className="space-y-4">
                 {[
-                  { key: 'currentUpsellRate', label: 'Current Upsell Rate (%)', min: 0, max: 30, step: 1, tooltip: '% of contacts that result in upsell' },
-                  { key: 'currentConversionRate', label: 'Current Conversion Rate (%)', min: 0, max: 50, step: 1, tooltip: '% of contacts that convert to sale' },
+                  { key: 'currentUpsellRate', label: 'Current Upsell Rate (%)', min: 0, max: 30, step: 1, tooltip: '% of conversations that result in upsell' },
+                  { key: 'currentConversionRate', label: 'Current Conversion Rate (%)', min: 0, max: 50, step: 1, tooltip: '% of conversations that convert to sale' },
                   { key: 'customerChurnRate', label: 'Customer Churn Rate (%)', min: 0, max: 20, step: 0.5, tooltip: 'Annual customer churn %' },
-                  { key: 'avgDealSize', label: 'Avg Deal/Transaction Size', min: 50, max: 5000, step: 50, tooltip: 'Average revenue per transaction' }
+                  { key: 'avgDealSize', label: 'Avg Deal/Transaction Size', min: 50, max: 1000000, step: 50, tooltip: 'Average revenue per transaction' }
                 ].map(({ key, label, min, max, step, tooltip }) => (
                   <div key={key}>
                     <Tooltip text={tooltip}>
@@ -556,15 +593,15 @@ export default function SimplifiedSierraROICalculator() {
               </h2>
               <div className="space-y-4">
                 {[
-                  { key: 'uniqueContactsPerMonth', label: 'Unique Contacts (Profiles)/Month', min: 0, max: 200000, step: 5000, tooltip: 'Number of unique customer profiles' },
-                  { key: 'conversationsPerContactPerMonth', label: 'Conversations per Contact/Month', min: 0, max: 10, step: 0.5, tooltip: 'Average conversations per unique contact' },
+                  { key: 'uniqueContactsPerMonth', label: 'Unique Customers in Conversations (Profiles)/Month', min: 0, max: 200000, step: 5000, tooltip: 'Number of unique customer profiles in conversations' },
+                  { key: 'conversationsPerContactPerMonth', label: 'Conversations per Customer/Month', min: 0, max: 10, step: 0.5, tooltip: 'Average conversations per unique customer' },
                   { key: 'avgVoiceConversationMinutes', label: 'Avg Voice Conversation (min)', min: 0, max: 30, step: 1, tooltip: 'Average voice call length. Set to 0 if messaging-only' },
                   { key: 'avgMessagingPerConversation', label: 'Avg Messages per Conversation', min: 0, max: 50, step: 1, tooltip: 'Average messages exchanged. Set to 0 if voice-only' },
-                  { key: 'avgParticipantsPerConversation', label: 'Avg Participants/Conversation', min: 0, max: 3, step: 0.1, tooltip: '1.0 = customer only, 1.3 = occasionally +1 person' },
+                  { key: 'avgParticipantsPerConversation', label: 'Avg Customer Participants/Conversation', min: 0, max: 3, step: 0.1, tooltip: '1.0 = customer only, 1.3 = occasionally +1 person' },
                   { key: 'knowledgeDocsSizeMB', label: 'Knowledge Docs Size (MB)', min: 0, max: 1000, step: 50, tooltip: 'Size of knowledge base documents' },
                   { key: 'recallsPerConversation', label: 'Memory Recalls per Conversation', min: 0, max: 10, step: 1, tooltip: 'How often memory is retrieved per conversation' },
                   { key: 'totalStoredProfilesPerMonth', label: 'Total Stored Profiles/Month', min: 0, max: 5000000, step: 10000, tooltip: 'Total profiles maintained in database' },
-                  { key: 'profilesWithCRMActivity', label: 'Profiles with CRM Updates/Month', min: 0, max: 5000000, step: 10000, tooltip: 'Profiles that trigger CRM integrations' }
+                  { key: 'profilesWithCRMActivity', label: 'Active Profiles (CRM Activity)/Month', min: 0, max: 5000000, step: 10000, tooltip: 'Active profiles that trigger CRM integrations' }
                 ].map(({ key, label, min, max, step, tooltip }) => (
                   <div key={key}>
                     <Tooltip text={tooltip}>
@@ -769,19 +806,26 @@ export default function SimplifiedSierraROICalculator() {
               {/* Breakdown */}
               <div className="mt-6 p-4 bg-slate-50 rounded-lg">
                 <p className="text-sm font-semibold text-slate-700 mb-3">Sierra Product Breakdown (Annual):</p>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-4 text-sm">
                   {[
-                    { label: 'Memory Creation', value: results.breakdown.memoryCreation },
-                    { label: 'Memory Recall', value: results.breakdown.memoryRecall },
-                    { label: 'Profiles', value: results.breakdown.profiles },
-                    { label: 'CINTEL Operators', value: results.breakdown.cintel },
-                    { label: 'Maestro Participants', value: results.breakdown.maestro },
-                    { label: 'Knowledge Docs', value: results.breakdown.knowledge },
-                    { label: 'CRM Activity', value: results.breakdown.crmActivity }
-                  ].map(({ label, value }) => (
-                    <div key={label} className="flex justify-between">
-                      <span className="text-slate-600">{label}:</span>
-                      <span className="font-semibold">{formatCurrency(value)}</span>
+                    { label: 'Memory Creation', key: 'memoryCreation', value: results.breakdown.memoryCreation },
+                    { label: 'Memory Recall', key: 'memoryRecall', value: results.breakdown.memoryRecall },
+                    { label: 'Profiles', key: 'profiles', value: results.breakdown.profiles },
+                    { label: 'CINTEL Operators', key: 'cintel', value: results.breakdown.cintel },
+                    { label: 'Maestro Participants', key: 'maestro', value: results.breakdown.maestro },
+                    { label: 'Knowledge Docs', key: 'knowledge', value: results.breakdown.knowledge },
+                    { label: 'Active Profiles (CRM Activity)', key: 'crmActivity', value: results.breakdown.crmActivity }
+                  ].map(({ label, key, value }) => (
+                    <div key={label} className="p-3 bg-white rounded-lg border border-slate-200">
+                      <div className="flex justify-between items-center">
+                        <span className="font-semibold text-slate-700">{label}</span>
+                        <span className="font-bold text-orange-600">{formatCurrency(value)}</span>
+                      </div>
+                      <div className="mt-2 space-y-1 text-xs text-slate-500">
+                        <p><span className="font-medium text-slate-600">Meter:</span> {results.breakdownDetails[key].meter}</p>
+                        <p><span className="font-medium text-slate-600">Price:</span> {results.breakdownDetails[key].price}</p>
+                        <p><span className="font-medium text-slate-600">Formula:</span> {results.breakdownDetails[key].formula}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
